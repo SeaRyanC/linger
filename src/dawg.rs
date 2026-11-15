@@ -21,14 +21,6 @@ const NODE_STRIDE: u32 = 32;
 // Bit mask of whether this node is terminal
 const TERMINAL: u32 = 1;
 
-struct DawgNode<'a>(&'a[u32]);
-impl DawgNode<'_> {
-    fn from_vec_static<'a>(src: &'a Vec<u32>, offset: usize) -> DawgNode<'a> {
-        let popc = (src[offset] & !TERMINAL).count_ones() as usize;
-        DawgNode(&src[offset..offset+popc])
-    }
-}
-
 impl DynamicDawg {
     pub fn make_fillable(capacity: usize) -> DynamicDawg {
         DynamicDawg {
@@ -54,8 +46,8 @@ impl DynamicDawg {
         result
     }
 
-    fn height_of(&self, heightMap: &mut HashMap<u32, u32>, node: u32) -> u32 {
-        if let Some(entry) = heightMap.get(&node) {
+    fn height_of(&self, height_map: &mut HashMap<u32, u32>, node: u32) -> u32 {
+        if let Some(entry) = height_map.get(&node) {
             *entry
         } else {
             let mut i = node + 1;
@@ -63,15 +55,16 @@ impl DynamicDawg {
             loop {
                 let c = self.dawg.0[i as usize];
                 if c == 0 { break; }
-                height = std::cmp::max(height, 1 + self.height_of(heightMap, c));
+                height = std::cmp::max(height, 1 + self.height_of(height_map, c));
                 i += 1;
             }
-            heightMap.insert(node, height);
+            height_map.insert(node, height);
             height
         }
     }
 
-    pub fn canonicalize(&mut self) {
+    // Returns the new number of canonical nodes
+    pub fn canonicalize(&mut self) -> usize {
         let height_map = self.compute_height_map();
         // Map from hash of node content to canonical position
         let mut canonical: HashMap<u64, u32> = HashMap::new();
@@ -109,6 +102,7 @@ impl DynamicDawg {
                 }
             }
         }
+        canonical.len()
     }
 
     pub fn minimize(&self) -> Dawg {
@@ -117,7 +111,7 @@ impl DynamicDawg {
             next_alloc_slot: u32,
             address_map: HashMap<u32, u32>,
             dawg: &'a Dawg
-        };
+        }
 
         // TODO: Compute minimized's size ahead of time
         let mut ctx = MinContext {
@@ -227,6 +221,36 @@ impl Dawg {
         Dawg(vec)
     }
 
+    pub fn get_strings(self: &Self) -> Vec<String> {
+        let mut chars: Vec<char> = Vec::new();
+        let mut strs: Vec<String> = Vec::new();
+        self.get_contents_worker(0, &mut chars, &mut strs);
+        strs
+    }
+
+    fn get_contents_worker(self: &Self, current: u32, chars: &mut Vec<char>, strs: &mut Vec<String>) {
+        let mut mask = self.0[current as usize];
+        if mask & TERMINAL == TERMINAL {
+            let str: String = chars.iter().collect();
+            strs.push(str);
+        }
+        mask = mask >> 1;
+
+        let mut offset = 1;
+        let mut i = 0;
+        while mask != 0 {
+            if mask & 1 == 1 {
+                chars.push(Letter::from_index(i).to_char());
+                let next_index = self.0[(current + offset) as usize];
+                self.get_contents_worker(next_index, chars, strs);
+                chars.pop();
+                offset += 1;
+            }
+            i += 1;
+            mask = mask >> 1;
+        }
+    }
+
     pub fn print_contents(self: &Self) {
         let mut chars: Vec<char> = Vec::new();
         self.print_contents_worker(0, &mut chars);
@@ -241,7 +265,7 @@ impl Dawg {
         mask = mask >> 1;
 
         let mut offset = 1;
-        let mut i = 1;
+        let mut i = 0;
         while mask != 0 {
             if mask & 1 == 1 {
                 chars.push(Letter::from_index(i).to_char());
@@ -253,5 +277,41 @@ impl Dawg {
             i += 1;
             mask = mask >> 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_insert() {
+        let mut dd = DynamicDawg::make_fillable(1024);
+        dd.insert("ALPHA");
+        dd.dawg.print_contents();
+        let output = dd.dawg.get_strings();
+        assert_eq!(output.len(), 1);
+        assert_eq!("ALPHA", output[0]);
+    }
+
+    #[test]
+    fn bulk_insert() {
+        const SAMPLE_WORDS: &str = include_str!("../data/words-2974.txt");
+        let word_list: Vec<&str> = SAMPLE_WORDS.lines().filter(|w| -> bool { w.len() != 0 }).collect();
+        let mut empty = DynamicDawg::make_fillable(SAMPLE_WORDS.len());
+        for line in &word_list {
+            empty.insert(line);
+        }
+
+        let uncanonicalized = empty.dawg.get_strings();
+        assert_eq!(word_list, uncanonicalized);
+
+        empty.canonicalize();
+        let canonicalized = empty.dawg.get_strings();
+        assert_eq!(word_list, canonicalized);
+
+        let min = empty.minimize();
+        let minimized = min.get_strings();
+        assert_eq!(word_list, minimized);
     }
 }

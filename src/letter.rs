@@ -1,24 +1,25 @@
+use std::num::NonZeroU8;
 // TODO: fix storage (currently A = 0)
 // Stores a letter as a u8 with 1 = A, 2 = B, etc.
 // This allows 0 to mean "terminal" in the dawg
 // and "blank" in a tile
 #[derive(Clone,Copy,Debug,PartialEq)]
-pub struct Letter(u8);
+pub struct Letter(NonZeroU8);
 impl Letter {
     pub fn from_char(c: char) -> Letter {
         debug_assert!(c.is_ascii_uppercase());
         let res = c as u8 - b'A';
         debug_assert!(res <= 26);
-        Letter(res)
+        Letter(NonZeroU8::new(res + 1).expect("adding one means nonzero"))
     }
     pub fn from_index(c: u8) -> Letter {
         Self::from_char((b'A' + c) as char)
     }
     pub fn to_char(self) -> char {
-        (b'A' + self.0) as char
+        (b'A' + (u8::from(self.0) - 1)) as char
     }
     pub fn mask(self) -> u32 {
-        2 << self.0
+        1 << u8::from(self.0)
     }
 }
 
