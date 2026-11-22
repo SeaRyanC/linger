@@ -5,13 +5,13 @@
 //    - bits 1, 2, 3, ...: is there a node target for A, B, C, ...?
 // offs+N: for each node target that exists, the offs of that node
 
-use std::{collections::HashMap, debug_assert, hash::DefaultHasher};
-use std::hash::Hasher;
 use crate::letter::Letter;
+use std::hash::Hasher;
+use std::{collections::HashMap, debug_assert, hash::DefaultHasher};
 
 pub struct DynamicDawg {
     pub dawg: Dawg,
-    last_alloc: u32
+    last_alloc: u32,
 }
 pub struct Dawg(pub Vec<u32>);
 
@@ -25,7 +25,7 @@ impl DynamicDawg {
     pub fn make_fillable(capacity: usize) -> DynamicDawg {
         DynamicDawg {
             dawg: Dawg(vec![0; capacity * NODE_STRIDE as usize]),
-            last_alloc: 0
+            last_alloc: 0,
         }
     }
 
@@ -54,7 +54,9 @@ impl DynamicDawg {
             let mut height = 0;
             loop {
                 let c = self.dawg.0[i as usize];
-                if c == 0 { break; }
+                if c == 0 {
+                    break;
+                }
                 height = std::cmp::max(height, 1 + self.height_of(height_map, c));
                 i += 1;
             }
@@ -110,7 +112,7 @@ impl DynamicDawg {
             minimized: Vec<u32>,
             next_alloc_slot: u32,
             address_map: HashMap<u32, u32>,
-            dawg: &'a Dawg
+            dawg: &'a Dawg,
         }
 
         // TODO: Compute minimized's size ahead of time
@@ -118,7 +120,7 @@ impl DynamicDawg {
             minimized: vec![],
             next_alloc_slot: 0,
             address_map: HashMap::new(),
-            dawg: &self.dawg
+            dawg: &self.dawg,
         };
         ctx.minimized.resize(128, 0);
 
@@ -151,7 +153,8 @@ impl DynamicDawg {
             ctx.minimized[this_ptr as usize] = ctx.dawg.0[node as usize];
             for j in 1..size_to_alloc {
                 let src = ctx.dawg.0[(node + j) as usize];
-                ctx.minimized[(this_ptr + j) as usize] = *ctx.address_map.get(&src).expect("must be alloc'd already");
+                ctx.minimized[(this_ptr + j) as usize] =
+                    *ctx.address_map.get(&src).expect("must be alloc'd already");
             }
         }
 
@@ -161,7 +164,7 @@ impl DynamicDawg {
     }
 
     pub fn node_hash(&self, offset: u32) -> u64 {
-        let slice = &self.dawg.0[offset as usize..(offset+NODE_STRIDE) as usize];
+        let slice = &self.dawg.0[offset as usize..(offset + NODE_STRIDE) as usize];
         let mut hash = DefaultHasher::new();
         for s in slice {
             hash.write_u32(*s);
@@ -213,12 +216,36 @@ impl DynamicDawg {
     pub fn node_count(&self) -> u32 {
         self.last_alloc / NODE_STRIDE
     }
-
 }
 
 impl Dawg {
     pub fn from(vec: Vec<u32>) -> Dawg {
         Dawg(vec)
+    }
+
+    pub fn from_bytes(vec: &Vec<u8>) -> Dawg {
+        let mut output: Vec<u32> = vec![];
+        for i in 0..(vec.len() / 4) {
+            let j = i * 4;
+            output.push(u32::from_le_bytes([
+                vec[j],
+                vec[j + 1],
+                vec[j + 2],
+                vec[j + 3],
+            ]));
+        }
+        Dawg::from(output)
+    }
+
+    pub fn read_target(&self, current: usize, letter: Letter) -> usize {
+        let mask = letter.mask();
+        let low_mask = (mask - 1) & !TERMINAL;
+        let low_count = (self.0[current] & low_mask).count_ones() as usize;
+        return self.0[current + 1 + low_count] as usize;
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.iter().flat_map(|b| b.to_le_bytes()).collect()
     }
 
     pub fn get_strings(self: &Self) -> Vec<String> {
@@ -228,7 +255,12 @@ impl Dawg {
         strs
     }
 
-    fn get_contents_worker(self: &Self, current: u32, chars: &mut Vec<char>, strs: &mut Vec<String>) {
+    fn get_contents_worker(
+        self: &Self,
+        current: u32,
+        chars: &mut Vec<char>,
+        strs: &mut Vec<String>,
+    ) {
         let mut mask = self.0[current as usize];
         if mask & TERMINAL == TERMINAL {
             let str: String = chars.iter().collect();
@@ -297,7 +329,10 @@ mod tests {
     #[test]
     fn bulk_insert() {
         const SAMPLE_WORDS: &str = include_str!("../data/words-2974.txt");
-        let word_list: Vec<&str> = SAMPLE_WORDS.lines().filter(|w| -> bool { w.len() != 0 }).collect();
+        let word_list: Vec<&str> = SAMPLE_WORDS
+            .lines()
+            .filter(|w| -> bool { w.len() != 0 })
+            .collect();
         let mut empty = DynamicDawg::make_fillable(SAMPLE_WORDS.len());
         for line in &word_list {
             empty.insert(line);
@@ -313,5 +348,9 @@ mod tests {
         let min = empty.minimize();
         let minimized = min.get_strings();
         assert_eq!(word_list, minimized);
+
+        let bytes = min.to_bytes();
+        let from_bytes = Dawg::from_bytes(&bytes);
+        assert_eq!(word_list, from_bytes.get_strings());
     }
 }

@@ -1,2 +1,9 @@
 pub mod letter;
 pub mod dawg;
+pub mod player_move;
+pub mod board;
+pub mod move_generator;
+pub mod tile;
+pub mod tile_bag;
+pub mod tile_distrib;
+pub mod player_state;

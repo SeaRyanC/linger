@@ -28,7 +28,6 @@ fn main() -> () {
     println!("Successfully minimzed to {} bytes", node_count * 4);
 
     if let Some(output) = args.get(2) {
-        let bytes: Vec<u8> = min.0.iter().flat_map(|b| b.to_le_bytes()).collect();
-        std::fs::write(output, bytes).expect("Failed to write output");
+        std::fs::write(output, min.to_bytes()).expect("Failed to write output");
     }
 }

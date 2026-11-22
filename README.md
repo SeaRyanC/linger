@@ -3,5 +3,5 @@
 ## Regenerating wordlists
 
 ```shell
-cargo run --bin ingest-wordlist ./tmpdata/INPUT.txt ./data/OUTPUT.bin
+cargo run --bin ingest_wordlist ./tmpdata/INPUT.txt ./data/OUTPUT.bin
 ```
